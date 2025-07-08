@@ -2,7 +2,7 @@ import torch
 from torch.testing._internal.common_utils import TestCase
 from torch.testing._internal.optests import opcheck
 import unittest
-import extension_cpp
+import relu_pairing
 from torch import Tensor
 from typing import Tuple
 import torch.nn.functional as F
@@ -30,7 +30,7 @@ class TestMyMulAdd(TestCase):
     def _test_correctness(self, device):
         samples = self.sample_inputs(device)
         for args in samples:
-            result = extension_cpp.ops.mymuladd(*args)
+            result = relu_pairing.ops.mymuladd(*args)
             expected = reference_muladd(*args)
             torch.testing.assert_close(result, expected)
 
@@ -45,7 +45,7 @@ class TestMyMulAdd(TestCase):
         samples = self.sample_inputs(device, requires_grad=True)
         for args in samples:
             diff_tensors = [a for a in args if isinstance(a, torch.Tensor) and a.requires_grad]
-            out = extension_cpp.ops.mymuladd(*args)
+            out = relu_pairing.ops.mymuladd(*args)
             grad_out = torch.randn_like(out)
             result = torch.autograd.grad(out, diff_tensors, grad_out)
 
@@ -93,7 +93,7 @@ class TestMyAddOut(TestCase):
         samples = self.sample_inputs(device)
         for args in samples:
             result = args[-1]
-            extension_cpp.ops.myadd_out(*args)
+            relu_pairing.ops.myadd_out(*args)
             expected = torch.add(*args[:2])
             torch.testing.assert_close(result, expected)
 
