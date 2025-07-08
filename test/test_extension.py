@@ -44,7 +44,9 @@ class TestMyMulAdd(TestCase):
     def _test_gradients(self, device):
         samples = self.sample_inputs(device, requires_grad=True)
         for args in samples:
-            diff_tensors = [a for a in args if isinstance(a, torch.Tensor) and a.requires_grad]
+            diff_tensors = [
+                a for a in args if isinstance(a, torch.Tensor) and a.requires_grad
+            ]
             out = relu_pairing.ops.mymuladd(*args)
             grad_out = torch.randn_like(out)
             result = torch.autograd.grad(out, diff_tensors, grad_out)

@@ -1,9 +1,6 @@
 # C++/CUDA Extensions in PyTorch
 
-An example of writing a C++/CUDA extension for PyTorch. See
-[here](https://pytorch.org/tutorials/advanced/cpp_custom_ops.html) for the accompanying tutorial.
-This repo demonstrates how to write an example `extension_cpp.ops.mymuladd`
-custom op that has both custom CPU and CUDA kernels.
+Pairing M rows in a Matrix of 2M by N - hashing version.
 
 The examples in this repo work with PyTorch 2.4+.
 
@@ -14,9 +11,6 @@ pip install --no-build-isolation -e .
 
 To test:
 ```
-python test/test_extension.py
+python test/test_hash_pairing.py
 ```
 
-## Authors
-
-[Peter Goldsborough](https://github.com/goldsborough), [Richard Zou](https://github.com/zou3519)
