@@ -121,11 +121,15 @@ at::Tensor hash_pair_rows_cpu(const at::Tensor& matrix) {
 // Defines the operators
 TORCH_LIBRARY(extension_cpp, m) {
   m.def("hash_pair_rows(Tensor matrix) -> Tensor");
+  m.def("hash_pair_rows_sorted(Tensor matrix) -> Tensor");
+  m.def("hash_pair_rows_simple(Tensor matrix) -> Tensor");
 }
 
-// Registers CUDA implementations for mymuladd, mymul, myadd_out
+// Register CPU implementations
 TORCH_LIBRARY_IMPL(extension_cpp, CPU, m) {
   m.impl("hash_pair_rows", &hash_pair_rows_cpu);
+  // For CPU, we only have the main hash_pair_rows method
+  // The CUDA-specific methods will fallback to CPU if needed
 }
 
 }

@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 
 """
-Example usage of the hash_pair_rows function for efficient row pairing.
+Example usage of the hash_pair_rows functions for efficient row pairing.
 
-This demonstrates how to use the custom CUDA/CPU hash-based pairing operation
-to find pairs of identical rows in matrices with O(N) complexity.
+This demonstrates how to use the custom CUDA/CPU hash-based pairing operations
+to find pairs of identical rows in matrices.
+
+Available Methods:
+1. relu_pairing.ops.hash_pair_rows - CPU hash table (O(N))
+2. relu_pairing.ops.hash_pair_rows_sorted - CUDA with sorting (O(N log N))
+3. relu_pairing.ops.hash_pair_rows_simple - CUDA without sorting (O(N))
 """
 
 import torch
@@ -105,7 +110,7 @@ def verify_pairs_correctness(matrix, pairs, method_name):
 
     all_correct = True
     incorrect_pairs = []
-    
+
     for i in range(pairs.shape[0]):
         idx1, idx2 = pairs[i]
         if not torch.equal(matrix[idx1], matrix[idx2]):
@@ -121,7 +126,7 @@ def verify_pairs_correctness(matrix, pairs, method_name):
             print(f"   Pair {pair_idx}: rows {idx1} and {idx2} don't match")
             print(f"     Row {idx1}: {matrix[idx1].tolist()}")
             print(f"     Row {idx2}: {matrix[idx2].tolist()}")
-            
+
             # Show which elements differ
             diff_mask = matrix[idx1] != matrix[idx2]
             if diff_mask.any():
@@ -199,22 +204,61 @@ def benchmark_all_methods(matrix, device="cpu"):
     results = {}
     timings = {}
 
-    # Method 1: Our hash-based implementation
-    print(f"\n{'-'*15} Hash-based Method {'-'*15}")
+    # Method 1: CPU hash-based implementation
+    print(f"\n{'-'*15} Hash-based Method (CPU) {'-'*15}")
     start_time = time.time()
     try:
-        hash_pairs = relu_pairing.ops.hash_pair_rows(matrix)
+        matrix_cpu = matrix.cpu() if device == "cuda" else matrix
+        hash_pairs = relu_pairing.ops.hash_pair_rows(matrix_cpu)
+        if device == "cuda":
+            hash_pairs = hash_pairs.cuda()
         hash_time = time.time() - start_time
-        results["hash"] = hash_pairs
-        timings["hash"] = hash_time
+        results["hash_cpu"] = hash_pairs
+        timings["hash_cpu"] = hash_time
         print(
-            f"✅ Hash method: {hash_time:.4f}s, "
+            f"✅ Hash CPU method: {hash_time:.4f}s, "
             f"found {hash_pairs.shape[0]} pairs"
         )
     except Exception as e:
-        print(f"❌ Hash method failed: {e}")
-        results["hash"] = None
-        timings["hash"] = float("inf")
+        print(f"❌ Hash CPU method failed: {e}")
+        results["hash_cpu"] = None
+        timings["hash_cpu"] = float("inf")
+
+    # Method 1a: CUDA hash-based implementation (sorted) - only on CUDA
+    if device == "cuda" and torch.cuda.is_available():
+        print(f"\n{'-'*15} Hash-based Method (CUDA Sorted) {'-'*15}")
+        start_time = time.time()
+        try:
+            hash_pairs_sorted = relu_pairing.ops.hash_pair_rows_sorted(matrix)
+            hash_sorted_time = time.time() - start_time
+            results["hash_sorted"] = hash_pairs_sorted
+            timings["hash_sorted"] = hash_sorted_time
+            print(
+                f"✅ Hash CUDA Sorted method: {hash_sorted_time:.4f}s, "
+                f"found {hash_pairs_sorted.shape[0]} pairs"
+            )
+        except Exception as e:
+            print(f"❌ Hash CUDA Sorted method failed: {e}")
+            results["hash_sorted"] = None
+            timings["hash_sorted"] = float("inf")
+
+    # Method 1b: CUDA hash-based implementation (simple O(N)) - only on CUDA
+    if device == "cuda" and torch.cuda.is_available():
+        print(f"\n{'-'*15} Hash-based Method (CUDA Simple O(N)) {'-'*15}")
+        start_time = time.time()
+        try:
+            hash_pairs_simple = relu_pairing.ops.hash_pair_rows_simple(matrix)
+            hash_simple_time = time.time() - start_time
+            results["hash_simple"] = hash_pairs_simple
+            timings["hash_simple"] = hash_simple_time
+            print(
+                f"✅ Hash CUDA Simple method: {hash_simple_time:.4f}s, "
+                f"found {hash_pairs_simple.shape[0]} pairs"
+            )
+        except Exception as e:
+            print(f"❌ Hash CUDA Simple method failed: {e}")
+            results["hash_simple"] = None
+            timings["hash_simple"] = float("inf")
 
     # Method 2: Python ground truth (sort-based)
     print(f"\n{'-'*15} Sort-based Method (Ground Truth) {'-'*15}")
@@ -273,20 +317,20 @@ def benchmark_all_methods(matrix, device="cpu"):
             )
             print(msg)
 
-    # Compare methods
-    print(f"\n{'-'*15} RESULT COMPARISON {'-'*15}")
-    methods = [(k, v) for k, v in results.items() if v is not None]
+    # # Compare methods
+    # print(f"\n{'-'*15} RESULT COMPARISON {'-'*15}")
+    # methods = [(k, v) for k, v in results.items() if v is not None]
 
-    for i in range(len(methods)):
-        for j in range(i + 1, len(methods)):
-            name1, pairs1 = methods[i]
-            name2, pairs2 = methods[j]
-            pairs1_cpu = pairs1.cpu() if device == "cuda" else pairs1
-            pairs2_cpu = pairs2.cpu() if device == "cuda" else pairs2
-            comparison = compare_pair_results(
-                pairs1_cpu, pairs2_cpu, name1, name2
-            )
-            print(comparison)
+    # for i in range(len(methods)):
+    #     for j in range(i + 1, len(methods)):
+    #         name1, pairs1 = methods[i]
+    #         name2, pairs2 = methods[j]
+    #         pairs1_cpu = pairs1.cpu() if device == "cuda" else pairs1
+    #         pairs2_cpu = pairs2.cpu() if device == "cuda" else pairs2
+    #         comparison = compare_pair_results(
+    #             pairs1_cpu, pairs2_cpu, name1, name2
+    #         )
+    #         print(comparison)
 
     # Performance analysis
     print(f"\n{'-'*15} PERFORMANCE ANALYSIS {'-'*15}")
@@ -299,18 +343,56 @@ def benchmark_all_methods(matrix, device="cpu"):
             f"({fastest_method[1]:.4f}s)"
         )
 
-        print(f"\nSpeedup comparison (vs {fastest_method[0]}):")
-        for method, time_taken in valid_methods:
-            if method != fastest_method[0]:
-                speedup = time_taken / fastest_method[1]
-                print(f"  {method}: {speedup:.2f}x slower")
+        # Always compare against the sort baseline (ground truth)
+        if "sort" in timings and timings["sort"] != float("inf"):
+            sort_time = timings["sort"]
+            print(f"\nSpeedup vs sort baseline ({sort_time:.4f}s):")
+            for method, time_taken in valid_methods:
+                if method != "sort":
+                    speedup = sort_time / time_taken
+                    print(f"  {method}: {speedup:.2f}x faster")
+        else:
+            print("\n⚠️  Sort baseline not available for comparison")
 
     return results
+
+
+def debug_available_methods():
+    """Debug function to check what methods are available"""
+    print("\n🔍 DEBUGGING AVAILABLE METHODS:")
+    print("=" * 50)
+    
+    # Check what's available in relu_pairing.ops
+    import relu_pairing.ops as ops
+    available_methods = [attr for attr in dir(ops) if not attr.startswith('_')]
+    print(f"Available methods in relu_pairing.ops: {available_methods}")
+    
+    # Test each method individually
+    test_methods = [
+        'hash_pair_rows', 'hash_pair_rows_sorted', 'hash_pair_rows_simple'
+    ]
+    
+    for method_name in test_methods:
+        if hasattr(ops, method_name):
+            print(f"✅ {method_name}: Available")
+        else:
+            print(f"❌ {method_name}: Not found")
+    
+    # Check CUDA availability
+    print(f"\nCUDA available: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        print(f"CUDA device count: {torch.cuda.device_count()}")
+        print(f"Current CUDA device: {torch.cuda.current_device()}")
+    
+    print("=" * 50)
 
 
 def main():
     print("🚀 Hash-based Row Pairing Benchmark Suite")
     print("=" * 60)
+    
+    # Debug what methods are available
+    debug_available_methods()
 
     # Test with data files
     data_files = [
@@ -333,14 +415,43 @@ def main():
 
                 # Cross-device comparison
                 print(f"\n{'-'*15} CPU vs CUDA COMPARISON {'-'*15}")
+                
+                # Compare CPU hash with CUDA sorted
                 if (
-                    cpu_results.get("hash") is not None
-                    and cuda_results.get("hash") is not None
+                    cpu_results.get("hash_cpu") is not None
+                    and cuda_results.get("hash_sorted") is not None
                 ):
-                    cpu_pairs = cpu_results["hash"].cpu()
-                    cuda_pairs = cuda_results["hash"].cpu()
+                    cpu_pairs = cpu_results["hash_cpu"].cpu()
+                    cuda_sorted_pairs = cuda_results["hash_sorted"].cpu()
                     comparison = compare_pair_results(
-                        cpu_pairs, cuda_pairs, "CPU Hash", "CUDA Hash"
+                        cpu_pairs, cuda_sorted_pairs, "CPU Hash", 
+                        "CUDA Hash Sorted"
+                    )
+                    print(comparison)
+                
+                # Compare CPU hash with CUDA simple
+                if (
+                    cpu_results.get("hash_cpu") is not None
+                    and cuda_results.get("hash_simple") is not None
+                ):
+                    cpu_pairs = cpu_results["hash_cpu"].cpu()
+                    cuda_simple_pairs = cuda_results["hash_simple"].cpu()
+                    comparison = compare_pair_results(
+                        cpu_pairs, cuda_simple_pairs, "CPU Hash", 
+                        "CUDA Hash Simple"
+                    )
+                    print(comparison)
+                
+                # Compare CUDA sorted vs CUDA simple
+                if (
+                    cuda_results.get("hash_sorted") is not None
+                    and cuda_results.get("hash_simple") is not None
+                ):
+                    cuda_sorted_pairs = cuda_results["hash_sorted"].cpu()
+                    cuda_simple_pairs = cuda_results["hash_simple"].cpu()
+                    comparison = compare_pair_results(
+                        cuda_sorted_pairs, cuda_simple_pairs, 
+                        "CUDA Hash Sorted", "CUDA Hash Simple"
                     )
                     print(comparison)
             else:
@@ -353,8 +464,9 @@ def main():
     # Synthetic large matrix test
     print(f"\n{'🧪 SYNTHETIC LARGE MATRIX TEST':=^60}")
 
-    # Create a 10000x50 matrix with guaranteed pairs
-    M, N = 1000000, 2000
+    # Create a matrix with guaranteed pairs for testing
+    M, N = 1000000, 2000  # Large for performance testing
+    # M, N = 2000, 50  # Smaller for initial testing
     print(f"Creating synthetic matrix of shape {M}x{N}...")
 
     # Generate M/2 unique base rows
@@ -379,10 +491,52 @@ def main():
 
     # Benchmark large matrix (skip naive method)
     print(f"\n{'Large Matrix Benchmarks':^40}")
-    # cpu_results = benchmark_all_methods(matrix, device="cpu")
+    cpu_results = benchmark_all_methods(matrix, device="cpu")
 
     if torch.cuda.is_available():
         cuda_results = benchmark_all_methods(matrix, device="cuda")
+        
+        # Cross-method comparison for large matrix
+        print(f"\n{'-'*15} LARGE MATRIX COMPARISON {'-'*15}")
+        
+        # Compare CPU hash with CUDA sorted
+        if (
+            cpu_results.get("hash_cpu") is not None
+            and cuda_results.get("hash_sorted") is not None
+        ):
+            cpu_pairs = cpu_results["hash_cpu"].cpu()
+            cuda_sorted_pairs = cuda_results["hash_sorted"].cpu()
+            comparison = compare_pair_results(
+                cpu_pairs, cuda_sorted_pairs, "CPU Hash", 
+                "CUDA Hash Sorted"
+            )
+            print(comparison)
+        
+        # Compare CPU hash with CUDA simple
+        if (
+            cpu_results.get("hash_cpu") is not None
+            and cuda_results.get("hash_simple") is not None
+        ):
+            cpu_pairs = cpu_results["hash_cpu"].cpu()
+            cuda_simple_pairs = cuda_results["hash_simple"].cpu()
+            comparison = compare_pair_results(
+                cpu_pairs, cuda_simple_pairs, "CPU Hash", 
+                "CUDA Hash Simple"
+            )
+            print(comparison)
+        
+        # Compare CUDA sorted vs CUDA simple
+        if (
+            cuda_results.get("hash_sorted") is not None
+            and cuda_results.get("hash_simple") is not None
+        ):
+            cuda_sorted_pairs = cuda_results["hash_sorted"].cpu()
+            cuda_simple_pairs = cuda_results["hash_simple"].cpu()
+            comparison = compare_pair_results(
+                cuda_sorted_pairs, cuda_simple_pairs, 
+                "CUDA Hash Sorted", "CUDA Hash Simple"
+            )
+            print(comparison)
 
     print(f"\n{'✅ BENCHMARK SUITE COMPLETED':=^60}")
     print("Summary: All methods tested and compared successfully!")
