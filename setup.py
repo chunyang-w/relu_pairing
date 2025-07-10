@@ -82,5 +82,7 @@ setup(
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
     cmdclass={"build_ext": BuildExtension},
-    options={"bdist_wheel": {"py_limited_api": "cp39"}} if py_limited_api else {},
+    options=(
+        {"bdist_wheel": {"py_limited_api": "cp39"}} if py_limited_api else {}
+    ),
 )

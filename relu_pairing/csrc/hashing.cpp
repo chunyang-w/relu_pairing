@@ -47,15 +47,25 @@ at::Tensor hash_pair_rows_cpu(const at::Tensor& matrix) {
                                   matrix.options().dtype(at::kLong));
   int64_t* pairs_ptr = pairs.data_ptr<int64_t>();
   
-  // Hash map to store row hash -> row index
-  std::unordered_map<uint64_t, int64_t> row_hash_map;
+  // Hash map to store row hash -> vector of row indices (for collision handling)
+  std::unordered_map<uint64_t, std::vector<int64_t>> row_hash_map;
   int64_t pair_count = 0;
+  
+  // Helper function to check if two rows are actually equal
+  auto rows_equal = [&](int64_t row1, int64_t row2) -> bool {
+    for (int64_t col = 0; col < N; col++) {
+      if (matrix_ptr[row1 * N + col] != matrix_ptr[row2 * N + col]) {
+        return false;
+      }
+    }
+    return true;
+  };
   
   // Process each row
   for (int64_t row = 0; row < M; row++) {
     // Compute hash for current row using polynomial rolling hash
     uint64_t hash = 0;
-    const uint64_t base = 31;
+    const uint64_t base = 64;
     const uint64_t mod = 1e9 + 7;
     
     for (int64_t col = 0; col < N; col++) {
@@ -66,16 +76,38 @@ at::Tensor hash_pair_rows_cpu(const at::Tensor& matrix) {
     // Check if we've seen this hash before
     auto it = row_hash_map.find(hash);
     if (it != row_hash_map.end()) {
-      // Found a match! Create a pair
-      pairs_ptr[pair_count * 2] = it->second;     // first row index
-      pairs_ptr[pair_count * 2 + 1] = row;        // second row index
-      pair_count++;
+      // Hash collision detected - need to check actual row equality
+      bool found_match = false;
+      auto& candidate_rows = it->second;
       
-      // Remove the hash from map since we've paired it
-      row_hash_map.erase(it);
+      // Check each candidate row with the same hash
+      for (auto candidate_it = candidate_rows.begin(); 
+           candidate_it != candidate_rows.end(); ++candidate_it) {
+        if (rows_equal(*candidate_it, row)) {
+          // Found actual row match! Create a pair
+          pairs_ptr[pair_count * 2] = *candidate_it;  // first row index
+          pairs_ptr[pair_count * 2 + 1] = row;        // second row index
+          pair_count++;
+          found_match = true;
+          
+          // Remove the matched row from candidates
+          candidate_rows.erase(candidate_it);
+          
+          // If no more candidates for this hash, remove hash entry
+          if (candidate_rows.empty()) {
+            row_hash_map.erase(it);
+          }
+          break;
+        }
+      }
+      
+      if (!found_match) {
+        // Hash collision but no actual match - add to candidates
+        candidate_rows.push_back(row);
+      }
     } else {
-      // First time seeing this hash, store it
-      row_hash_map[hash] = row;
+      // First time seeing this hash, create new entry
+      row_hash_map[hash] = std::vector<int64_t>{row};
     }
   }
   
@@ -85,76 +117,14 @@ at::Tensor hash_pair_rows_cpu(const at::Tensor& matrix) {
   return pairs;
 }
 
-at::Tensor mymuladd_cpu(const at::Tensor& a, const at::Tensor& b, double c) {
-  TORCH_CHECK(a.sizes() == b.sizes());
-  TORCH_CHECK(a.dtype() == at::kFloat);
-  TORCH_CHECK(b.dtype() == at::kFloat);
-  TORCH_INTERNAL_ASSERT(a.device().type() == at::DeviceType::CPU);
-  TORCH_INTERNAL_ASSERT(b.device().type() == at::DeviceType::CPU);
-  at::Tensor a_contig = a.contiguous();
-  at::Tensor b_contig = b.contiguous();
-  at::Tensor result = torch::empty(a_contig.sizes(), a_contig.options());
-  const float* a_ptr = a_contig.data_ptr<float>();
-  const float* b_ptr = b_contig.data_ptr<float>();
-  float* result_ptr = result.data_ptr<float>();
-  for (int64_t i = 0; i < result.numel(); i++) {
-    result_ptr[i] = a_ptr[i] * b_ptr[i] + c;
-  }
-  return result;
-}
-
-at::Tensor mymul_cpu(const at::Tensor& a, const at::Tensor& b) {
-  TORCH_CHECK(a.sizes() == b.sizes());
-  TORCH_CHECK(a.dtype() == at::kFloat);
-  TORCH_CHECK(b.dtype() == at::kFloat);
-  TORCH_INTERNAL_ASSERT(a.device().type() == at::DeviceType::CPU);
-  TORCH_INTERNAL_ASSERT(b.device().type() == at::DeviceType::CPU);
-  at::Tensor a_contig = a.contiguous();
-  at::Tensor b_contig = b.contiguous();
-  at::Tensor result = torch::empty(a_contig.sizes(), a_contig.options());
-  const float* a_ptr = a_contig.data_ptr<float>();
-  const float* b_ptr = b_contig.data_ptr<float>();
-  float* result_ptr = result.data_ptr<float>();
-  for (int64_t i = 0; i < result.numel(); i++) {
-    result_ptr[i] = a_ptr[i] * b_ptr[i];
-  }
-  return result;
-}
-
-// An example of an operator that mutates one of its inputs.
-void myadd_out_cpu(const at::Tensor& a, const at::Tensor& b, at::Tensor& out) {
-  TORCH_CHECK(a.sizes() == b.sizes());
-  TORCH_CHECK(b.sizes() == out.sizes());
-  TORCH_CHECK(a.dtype() == at::kFloat);
-  TORCH_CHECK(b.dtype() == at::kFloat);
-  TORCH_CHECK(out.dtype() == at::kFloat);
-  TORCH_CHECK(out.is_contiguous());
-  TORCH_INTERNAL_ASSERT(a.device().type() == at::DeviceType::CPU);
-  TORCH_INTERNAL_ASSERT(b.device().type() == at::DeviceType::CPU);
-  TORCH_INTERNAL_ASSERT(out.device().type() == at::DeviceType::CPU);
-  at::Tensor a_contig = a.contiguous();
-  at::Tensor b_contig = b.contiguous();
-  const float* a_ptr = a_contig.data_ptr<float>();
-  const float* b_ptr = b_contig.data_ptr<float>();
-  float* result_ptr = out.data_ptr<float>();
-  for (int64_t i = 0; i < out.numel(); i++) {
-    result_ptr[i] = a_ptr[i] + b_ptr[i];
-  }
-}
 
 // Defines the operators
 TORCH_LIBRARY(extension_cpp, m) {
-  m.def("mymuladd(Tensor a, Tensor b, float c) -> Tensor");
-  m.def("mymul(Tensor a, Tensor b) -> Tensor");
-  m.def("myadd_out(Tensor a, Tensor b, Tensor(a!) out) -> ()");
   m.def("hash_pair_rows(Tensor matrix) -> Tensor");
 }
 
 // Registers CUDA implementations for mymuladd, mymul, myadd_out
 TORCH_LIBRARY_IMPL(extension_cpp, CPU, m) {
-  m.impl("mymuladd", &mymuladd_cpu);
-  m.impl("mymul", &mymul_cpu);
-  m.impl("myadd_out", &myadd_out_cpu);
   m.impl("hash_pair_rows", &hash_pair_rows_cpu);
 }
 

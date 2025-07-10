@@ -19,7 +19,7 @@ if (row >= M) return;
 
 // Compute polynomial hash for this row
 uint64_t hash = 0;
-const uint64_t base = 31;
+const uint64_t base = 64;
 const uint64_t mod = 1000000007ULL;  // 1e9 + 7
 
 for (int64_t col = 0; col < N; col++) {
@@ -31,22 +31,58 @@ hashes[row] = hash;
 row_indices[row] = row;
 }
 
-// CUDA kernel for finding pairs from sorted hash-index pairs
-__global__ void find_pairs_kernel(const uint64_t* sorted_hashes, 
-const int64_t* sorted_indices,
-int64_t M, int64_t* pairs, int64_t* pair_count) {
-int idx = blockIdx.x * blockDim.x + threadIdx.x;
-if (idx >= M - 1) return;
+// CUDA kernel for finding pairs from sorted hash-index pairs with row equality verification
+__global__ void find_pairs_kernel(const uint64_t* sorted_hashes, const int64_t* sorted_indices, 
+                                 const int64_t* matrix, int64_t M, int64_t N, 
+                                 int64_t* pairs, int64_t* pair_count, int64_t* used_flags) {
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx >= M) return;
 
-// Check if current and next hash are the same
-if (sorted_hashes[idx] == sorted_hashes[idx + 1]) {
-// Atomic increment to get unique pair index
-int64_t pair_idx = atomicAdd((unsigned long long*)pair_count, 1ULL);
-if (pair_idx < M / 2) {
-pairs[pair_idx * 2] = sorted_indices[idx];
-pairs[pair_idx * 2 + 1] = sorted_indices[idx + 1];
-}
-}
+  // Skip if this row is already used
+  if (used_flags[idx] == 1) return;
+
+  int64_t row1 = sorted_indices[idx];
+  
+  // Look for a matching row among the remaining rows with the same hash
+  for (int64_t search_idx = idx + 1; search_idx < M; search_idx++) {
+    // Stop if hash changes
+    if (sorted_hashes[search_idx] != sorted_hashes[idx]) break;
+    
+    // Skip if this candidate row is already used
+    if (used_flags[search_idx] == 1) continue;
+    
+    int64_t row2 = sorted_indices[search_idx];
+    
+    // Check if rows are actually equal
+    bool rows_equal = true;
+    for (int64_t col = 0; col < N; col++) {
+      if (matrix[row1 * N + col] != matrix[row2 * N + col]) {
+        rows_equal = false;
+        break;
+      }
+    }
+    
+    // If rows are equal, try to pair them
+    if (rows_equal) {
+      // Try to atomically mark both rows as used
+      if (atomicCAS((unsigned long long*)&used_flags[idx], 0ULL, 1ULL) == 0ULL) {
+        if (atomicCAS((unsigned long long*)&used_flags[search_idx], 0ULL, 1ULL) == 0ULL) {
+          // Successfully marked both as used, create the pair
+          int64_t pair_idx = atomicAdd((unsigned long long*)pair_count, 1ULL);
+          if (pair_idx < M / 2) {
+            pairs[pair_idx * 2] = row1;
+            pairs[pair_idx * 2 + 1] = row2;
+          }
+          break;
+        } else {
+          // Failed to mark second row, unmark first row
+          used_flags[idx] = 0;
+        }
+      }
+      // If we failed to mark the first row, someone else got it, so we're done
+      if (used_flags[idx] == 1) break;
+    }
+  }
 }
 
 at::Tensor hash_pair_rows_cuda(const at::Tensor& matrix) {
@@ -71,10 +107,12 @@ int64_t* pairs_ptr = pairs.data_ptr<int64_t>();
 thrust::device_vector<uint64_t> hashes(M);
 thrust::device_vector<int64_t> row_indices(M);
 thrust::device_vector<int64_t> pair_count_vec(1, 0);
+thrust::device_vector<int64_t> used_flags(M, 0);  // Track which rows are already paired
 
 uint64_t* hashes_ptr = thrust::raw_pointer_cast(hashes.data());
 int64_t* indices_ptr = thrust::raw_pointer_cast(row_indices.data());
 int64_t* pair_count_ptr = thrust::raw_pointer_cast(pair_count_vec.data());
+int64_t* used_flags_ptr = thrust::raw_pointer_cast(used_flags.data());
 
 // Compute hashes for all rows
 int threads_per_block = 256;
@@ -89,7 +127,7 @@ thrust::sort_by_key(hashes.begin(), hashes.end(), row_indices.begin());
 // Find pairs from sorted hash-index pairs
 blocks = (M + threads_per_block - 1) / threads_per_block;
 find_pairs_kernel<<<blocks, threads_per_block>>>(
-hashes_ptr, indices_ptr, M, pairs_ptr, pair_count_ptr);
+hashes_ptr, indices_ptr, matrix_ptr, M, N, pairs_ptr, pair_count_ptr, used_flags_ptr);
 cudaDeviceSynchronize();
 
 // Verify we found the expected number of pairs
@@ -101,81 +139,9 @@ TORCH_CHECK(found_pairs == M / 2,
 return pairs;
 }
 
-__global__ void muladd_kernel(int numel, const float* a, const float* b, float c, float* result) {
-  int idx = blockIdx.x * blockDim.x + threadIdx.x;
-  if (idx < numel) result[idx] = a[idx] * b[idx] + c;
-}
-
-at::Tensor mymuladd_cuda(const at::Tensor& a, const at::Tensor& b, double c) {
-  TORCH_CHECK(a.sizes() == b.sizes());
-  TORCH_CHECK(a.dtype() == at::kFloat);
-  TORCH_CHECK(b.dtype() == at::kFloat);
-  TORCH_INTERNAL_ASSERT(a.device().type() == at::DeviceType::CUDA);
-  TORCH_INTERNAL_ASSERT(b.device().type() == at::DeviceType::CUDA);
-  at::Tensor a_contig = a.contiguous();
-  at::Tensor b_contig = b.contiguous();
-  at::Tensor result = at::empty(a_contig.sizes(), a_contig.options());
-  const float* a_ptr = a_contig.data_ptr<float>();
-  const float* b_ptr = b_contig.data_ptr<float>();
-  float* result_ptr = result.data_ptr<float>();
-
-  int numel = a_contig.numel();
-  muladd_kernel<<<(numel+255)/256, 256>>>(numel, a_ptr, b_ptr, c, result_ptr);
-  return result;
-}
-
-__global__ void mul_kernel(int numel, const float* a, const float* b, float* result) {
-  int idx = blockIdx.x * blockDim.x + threadIdx.x;
-  if (idx < numel) result[idx] = a[idx] * b[idx];
-}
-
-at::Tensor mymul_cuda(const at::Tensor& a, const at::Tensor& b) {
-  TORCH_CHECK(a.sizes() == b.sizes());
-  TORCH_CHECK(a.dtype() == at::kFloat);
-  TORCH_CHECK(b.dtype() == at::kFloat);
-  TORCH_INTERNAL_ASSERT(a.device().type() == at::DeviceType::CUDA);
-  TORCH_INTERNAL_ASSERT(b.device().type() == at::DeviceType::CUDA);
-  at::Tensor a_contig = a.contiguous();
-  at::Tensor b_contig = b.contiguous();
-  at::Tensor result = at::empty(a_contig.sizes(), a_contig.options());
-  const float* a_ptr = a_contig.data_ptr<float>();
-  const float* b_ptr = b_contig.data_ptr<float>();
-  float* result_ptr = result.data_ptr<float>();
-  int numel = a_contig.numel();
-  mul_kernel<<<(numel+255)/256, 256>>>(numel, a_ptr, b_ptr, result_ptr);
-  return result;
-}
-
-__global__ void add_kernel(int numel, const float* a, const float* b, float* result) {
-  int idx = blockIdx.x * blockDim.x + threadIdx.x;
-  if (idx < numel) result[idx] = a[idx] + b[idx];
-}
-
-void myadd_out_cuda(const at::Tensor& a, const at::Tensor& b, at::Tensor& out) {
-  TORCH_CHECK(a.sizes() == b.sizes());
-  TORCH_CHECK(b.sizes() == out.sizes());
-  TORCH_CHECK(a.dtype() == at::kFloat);
-  TORCH_CHECK(b.dtype() == at::kFloat);
-  TORCH_CHECK(out.dtype() == at::kFloat);
-  TORCH_CHECK(out.is_contiguous());
-  TORCH_INTERNAL_ASSERT(a.device().type() == at::DeviceType::CUDA);
-  TORCH_INTERNAL_ASSERT(b.device().type() == at::DeviceType::CUDA);
-  TORCH_INTERNAL_ASSERT(out.device().type() == at::DeviceType::CUDA);
-  at::Tensor a_contig = a.contiguous();
-  at::Tensor b_contig = b.contiguous();
-  const float* a_ptr = a_contig.data_ptr<float>();
-  const float* b_ptr = b_contig.data_ptr<float>();
-  float* result_ptr = out.data_ptr<float>();
-  int numel = a_contig.numel();
-  add_kernel<<<(numel+255)/256, 256>>>(numel, a_ptr, b_ptr, result_ptr);
-}
-
 
 // Registers CUDA implementations for mymuladd, mymul, myadd_out
 TORCH_LIBRARY_IMPL(extension_cpp, CUDA, m) {
-  m.impl("mymuladd", &mymuladd_cuda);
-  m.impl("mymul", &mymul_cuda);
-  m.impl("myadd_out", &myadd_out_cuda);
   m.impl("hash_pair_rows", &hash_pair_rows_cuda);
 }
 

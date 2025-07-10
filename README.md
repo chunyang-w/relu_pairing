@@ -14,3 +14,8 @@ To test:
 python test/test_hash_pairing.py
 ```
 
+Benchmarking:
+```
+python example_hash_pairing.py
+```
+
