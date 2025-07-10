@@ -361,36 +361,36 @@ def debug_available_methods():
     """Debug function to check what methods are available"""
     print("\n🔍 DEBUGGING AVAILABLE METHODS:")
     print("=" * 50)
-    
+
     # Check what's available in relu_pairing.ops
     import relu_pairing.ops as ops
     available_methods = [attr for attr in dir(ops) if not attr.startswith('_')]
     print(f"Available methods in relu_pairing.ops: {available_methods}")
-    
+
     # Test each method individually
     test_methods = [
         'hash_pair_rows', 'hash_pair_rows_sorted', 'hash_pair_rows_simple'
     ]
-    
+
     for method_name in test_methods:
         if hasattr(ops, method_name):
             print(f"✅ {method_name}: Available")
         else:
             print(f"❌ {method_name}: Not found")
-    
+
     # Check CUDA availability
     print(f"\nCUDA available: {torch.cuda.is_available()}")
     if torch.cuda.is_available():
         print(f"CUDA device count: {torch.cuda.device_count()}")
         print(f"Current CUDA device: {torch.cuda.current_device()}")
-    
+
     print("=" * 50)
 
 
 def main():
     print("🚀 Hash-based Row Pairing Benchmark Suite")
     print("=" * 60)
-    
+
     # Debug what methods are available
     debug_available_methods()
 
@@ -415,7 +415,7 @@ def main():
 
                 # Cross-device comparison
                 print(f"\n{'-'*15} CPU vs CUDA COMPARISON {'-'*15}")
-                
+
                 # Compare CPU hash with CUDA sorted
                 if (
                     cpu_results.get("hash_cpu") is not None
@@ -428,7 +428,7 @@ def main():
                         "CUDA Hash Sorted"
                     )
                     print(comparison)
-                
+
                 # Compare CPU hash with CUDA simple
                 if (
                     cpu_results.get("hash_cpu") is not None
@@ -441,7 +441,7 @@ def main():
                         "CUDA Hash Simple"
                     )
                     print(comparison)
-                
+
                 # Compare CUDA sorted vs CUDA simple
                 if (
                     cuda_results.get("hash_sorted") is not None
@@ -495,10 +495,10 @@ def main():
 
     if torch.cuda.is_available():
         cuda_results = benchmark_all_methods(matrix, device="cuda")
-        
+
         # Cross-method comparison for large matrix
         print(f"\n{'-'*15} LARGE MATRIX COMPARISON {'-'*15}")
-        
+
         # Compare CPU hash with CUDA sorted
         if (
             cpu_results.get("hash_cpu") is not None
@@ -511,7 +511,7 @@ def main():
                 "CUDA Hash Sorted"
             )
             print(comparison)
-        
+
         # Compare CPU hash with CUDA simple
         if (
             cpu_results.get("hash_cpu") is not None
@@ -524,7 +524,7 @@ def main():
                 "CUDA Hash Simple"
             )
             print(comparison)
-        
+
         # Compare CUDA sorted vs CUDA simple
         if (
             cuda_results.get("hash_sorted") is not None
