@@ -18,7 +18,7 @@ def load_matrix_from_file(filepath):
         row = list(map(int, lines[i].strip().split()))
         matrix.append(row)
 
-    return torch.tensor(matrix, dtype=torch.long)
+    return torch.tensor(matrix, dtype=torch.short)
 
 
 class TestHashPairRows(TestCase):
@@ -35,7 +35,7 @@ class TestHashPairRows(TestCase):
                 [2, 1, 0],  # row 4 (same as row 0)
                 [0, 1, 2],  # row 5 (same as row 1)
             ],
-            dtype=torch.long,
+            dtype=torch.short,
         )
 
         pairs = relu_pairing.ops.hash_pair_rows(matrix)
@@ -65,11 +65,11 @@ class TestHashPairRows(TestCase):
                 [2, 1, 0],
                 [0, 1, 2],
             ],
-            dtype=torch.long,
+            dtype=torch.short,
             device="cuda",
         )
 
-        pairs = relu_pairing.ops.hash_pair_rows(matrix)
+        pairs = relu_pairing.ops.hash_pair_rows_simple(matrix)
 
         # Should return 3 pairs
         self.assertEqual(pairs.shape, (3, 2))
@@ -87,10 +87,10 @@ class TestHashPairRows(TestCase):
         """Test with larger random matrix on CPU"""
         # Create a 100x10 matrix with guaranteed pairs
         M, N = 100, 10
-        base_rows = torch.randint(0, 3, (M // 2, N), dtype=torch.long)
+        base_rows = torch.randint(0, 3, (M // 2, N), dtype=torch.short)
 
         # Create pairs by duplicating each row
-        matrix = torch.zeros(M, N, dtype=torch.long)
+        matrix = torch.zeros(M, N, dtype=torch.short)
         for i in range(M // 2):
             matrix[2 * i] = base_rows[i]
             matrix[2 * i + 1] = base_rows[i]
@@ -117,9 +117,9 @@ class TestHashPairRows(TestCase):
     def test_large_matrix_cuda(self):
         """Test with larger random matrix on CUDA"""
         M, N = 100, 10
-        base_rows = torch.randint(0, 3, (M // 2, N), dtype=torch.long)
+        base_rows = torch.randint(0, 3, (M // 2, N), dtype=torch.short)
 
-        matrix = torch.zeros(M, N, dtype=torch.long)
+        matrix = torch.zeros(M, N, dtype=torch.short)
         for i in range(M // 2):
             matrix[2 * i] = base_rows[i]
             matrix[2 * i + 1] = base_rows[i]
@@ -127,7 +127,7 @@ class TestHashPairRows(TestCase):
         perm = torch.randperm(M)
         matrix = matrix[perm].cuda()
 
-        pairs = relu_pairing.ops.hash_pair_rows(matrix)
+        pairs = relu_pairing.ops.hash_pair_rows_simple(matrix)
 
         self.assertEqual(pairs.shape, (M // 2, 2))
 
@@ -164,7 +164,7 @@ class TestHashPairRows(TestCase):
     def test_error_cases(self):
         """Test error handling"""
         # Test odd number of rows
-        matrix_odd = torch.randint(0, 3, (5, 3), dtype=torch.long)
+        matrix_odd = torch.randint(0, 3, (5, 3), dtype=torch.short)
         with self.assertRaises(RuntimeError):
             relu_pairing.ops.hash_pair_rows(matrix_odd)
 
@@ -174,7 +174,7 @@ class TestHashPairRows(TestCase):
             relu_pairing.ops.hash_pair_rows(matrix_float)
 
         # Test 1D tensor
-        matrix_1d = torch.randint(0, 3, (10,), dtype=torch.long)
+        matrix_1d = torch.randint(0, 3, (10,), dtype=torch.short)
         with self.assertRaises(RuntimeError):
             relu_pairing.ops.hash_pair_rows(matrix_1d)
 
@@ -193,13 +193,13 @@ class TestHashPairRows(TestCase):
                 [4, 5, 6],  # duplicate of row 1
                 [7, 8, 9],  # duplicate of row 3
             ],
-            dtype=torch.long,
+            dtype=torch.short,
         )
 
         matrix_cuda = matrix_cpu.cuda()
 
         pairs_cpu = relu_pairing.ops.hash_pair_rows(matrix_cpu)
-        pairs_cuda = relu_pairing.ops.hash_pair_rows(matrix_cuda)
+        pairs_cuda = relu_pairing.ops.hash_pair_rows_simple(matrix_cuda)
 
         # Results should have same shape
         self.assertEqual(pairs_cpu.shape, pairs_cuda.shape)

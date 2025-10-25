@@ -33,7 +33,7 @@ def load_matrix_from_file(filepath):
         row = list(map(int, lines[i].strip().split()))
         matrix.append(row)
 
-    return torch.tensor(matrix, dtype=torch.long)
+    return torch.tensor(matrix, dtype=torch.short)
 
 
 def pair_via_sort(b: torch.Tensor):
@@ -100,7 +100,7 @@ def naive_pair_rows(matrix):
                 used.add(j)
                 break
 
-    return torch.tensor(pairs, dtype=torch.long)
+    return torch.tensor(pairs, dtype=torch.short)
 
 
 def verify_pairs_correctness(matrix, pairs, method_name):
@@ -470,7 +470,7 @@ def main():
     print(f"Creating synthetic matrix of shape {M}x{N}...")
 
     # Generate M/2 unique base rows
-    base_rows = torch.randint(0, 3, (M // 2, N), dtype=torch.long)
+    base_rows = torch.randint(0, 3, (M // 2, N), dtype=torch.short)
 
     # Check if base rows are unique by looking for duplicates
     _, counts = torch.unique(base_rows, dim=0, return_counts=True)
@@ -480,7 +480,7 @@ def main():
         )
 
     # Create pairs by duplicating each row
-    matrix = torch.zeros(M, N, dtype=torch.long)
+    matrix = torch.zeros(M, N, dtype=torch.short)
     for i in range(M // 2):
         matrix[2 * i] = base_rows[i]
         matrix[2 * i + 1] = base_rows[i]

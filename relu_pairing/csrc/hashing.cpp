@@ -31,7 +31,12 @@ namespace extension_cpp {
 // Hash-based row pairing function
 at::Tensor hash_pair_rows_cpu(const at::Tensor& matrix) {
   TORCH_CHECK(matrix.dim() == 2, "Input must be a 2D matrix");
-  TORCH_CHECK(matrix.dtype() == at::kLong, "Matrix must be of integer type");
+  TORCH_CHECK(matrix.scalar_type() == at::kByte || 
+              matrix.scalar_type() == at::kChar || 
+              matrix.scalar_type() == at::kShort || 
+              matrix.scalar_type() == at::kInt || 
+              matrix.scalar_type() == at::kLong,
+              "Matrix must be of integer type (byte, char, short, int, or long)");
   TORCH_INTERNAL_ASSERT(matrix.device().type() == at::DeviceType::CPU);
   
   int64_t M = matrix.size(0);  // number of rows
@@ -39,8 +44,9 @@ at::Tensor hash_pair_rows_cpu(const at::Tensor& matrix) {
   
   TORCH_CHECK(M % 2 == 0, "Number of rows must be even for complete pairing");
   
-  at::Tensor matrix_contig = matrix.contiguous();
-  const int64_t* matrix_ptr = matrix_contig.data_ptr<int64_t>();
+  // Convert to int16_t for consistent processing regardless of input type
+  at::Tensor matrix_contig = matrix.to(at::kShort).contiguous();
+  const int16_t* matrix_ptr = matrix_contig.data_ptr<int16_t>();
   
   // Create result tensor for pairs: shape (M/2, 2)
   at::Tensor pairs = torch::empty({M / 2, 2}, 
@@ -69,7 +75,7 @@ at::Tensor hash_pair_rows_cpu(const at::Tensor& matrix) {
     const uint64_t mod = 1e9 + 7;
     
     for (int64_t col = 0; col < N; col++) {
-      int64_t val = matrix_ptr[row * N + col];
+      int16_t val = matrix_ptr[row * N + col];
       hash = (hash * base + val) % mod;
     }
     
@@ -131,5 +137,4 @@ TORCH_LIBRARY_IMPL(extension_cpp, CPU, m) {
   // For CPU, we only have the main hash_pair_rows method
   // The CUDA-specific methods will fallback to CPU if needed
 }
-
 }

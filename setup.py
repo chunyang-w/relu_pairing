@@ -16,6 +16,15 @@ from torch.utils.cpp_extension import (
     CUDA_HOME,
 )
 
+print("CUDA_HOME: ", CUDA_HOME)
+print("torch.__version__: ", torch.__version__)
+print("torch.cuda.is_available(): ", torch.cuda.is_available())
+print("torch.cuda.get_device_name(0): ", torch.cuda.get_device_name(0))
+print("torch.cuda.get_device_capability(0): ", torch.cuda.get_device_capability(0))
+print("torch.cuda.get_device_properties(0): ", torch.cuda.get_device_properties(0))
+print("torch.cuda.get_device_properties(0).major: ", torch.cuda.get_device_properties(0).major)
+print("torch.cuda.get_device_properties(0).minor: ", torch.cuda.get_device_properties(0).minor)
+
 library_name = "relu_pairing"
 
 if torch.__version__ >= "2.6.0":

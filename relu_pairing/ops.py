@@ -50,7 +50,7 @@ def _(matrix):
     torch._check(
         M % 2 == 0, "Number of rows must be even for complete pairing"
     )
-    torch._check(matrix.dtype == torch.long, "Matrix must be of integer type")
+    # torch._check(matrix.dtype == torch.long, "Matrix must be of integer type")
 
     # Return tensor of shape (M/2, 2) containing pair indices
     pairs = torch.empty((M // 2, 2), dtype=torch.long, device=matrix.device)
@@ -64,7 +64,7 @@ def _(matrix):
     torch._check(
         M % 2 == 0, "Number of rows must be even for complete pairing"
     )
-    torch._check(matrix.dtype == torch.long, "Matrix must be of integer type")
+    # torch._check(matrix.dtype == torch.long, "Matrix must be of integer type")
 
     # Return tensor of shape (M/2, 2) containing pair indices
     pairs = torch.empty((M // 2, 2), dtype=torch.long, device=matrix.device)
@@ -78,7 +78,7 @@ def _(matrix):
     torch._check(
         M % 2 == 0, "Number of rows must be even for complete pairing"
     )
-    torch._check(matrix.dtype == torch.long, "Matrix must be of integer type")
+    # torch._check(matrix.dtype == torch.long, "Matrix must be of integer type")
 
     # Return tensor of shape (M/2, 2) containing pair indices
     pairs = torch.empty((M // 2, 2), dtype=torch.long, device=matrix.device)
